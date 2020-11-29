@@ -2,6 +2,8 @@
 using System;
 using System.IO;
 using System.Threading;
+using System.Security.AccessControl;
+
 
 namespace warzone_cleaner_c
 {
@@ -25,14 +27,20 @@ namespace warzone_cleaner_c
             Console.WriteLine("Hit any key once you have completed this step...");
             Console.ReadKey();
             Console.Clear();
-         //   Console.WriteLine(""); //say guid
+            Console.WriteLine("Attempting to change your GUID...");
+            spoofGuid();
+            Thread.Sleep(5000);
+            Console.WriteLine("Device GUID changed.");
+            Console.Clear();
             Console.WriteLine("Please restart your system.");
             Thread.Sleep(1000);
             Console.WriteLine("After restarting, reinstall/repair battle.net, blizzard, warzone.");
             Thread.Sleep(1000);
             Console.WriteLine("Make sure to login to a fresh account- otherwise you will need to do this again.");
             Thread.Sleep(1000);
-            Console.ReadLine();
+            Console.WriteLine("Everytime you start a new account after one has been banned,");
+            Console.WriteLine("run this application again. Press any key to close.");
+            Console.ReadKey();
         }
 
         private static void cleanFiles()
@@ -74,8 +82,25 @@ namespace warzone_cleaner_c
 
         private static void spoofGuid()
         {
-            //string GUIDNode = @"Hardware Profiles\0001";
-            //using (RegistryKey key = Registry.CurrentUser.OpenSubKey(GUIDNode, true)) if (key != null) foreach (string subkey)
+            Guid guid = Guid.NewGuid();
+
+            string GUID = @"SYSTEM\CurrentControlSet\Control\IDConfigDB\Hardware Profiles\0001";
+            RegistryKey subkey = Registry.LocalMachine.OpenSubKey(GUID, true);
+            if(subkey != null)
+            {
+                string user = Environment.UserDomainName + "\\" + Environment.UserName;
+                RegistrySecurity rs = new RegistrySecurity();
+                rs.AddAccessRule(new RegistryAccessRule(user,
+                    RegistryRights.FullControl,
+                    InheritanceFlags.None,
+                    PropagationFlags.None,
+                    AccessControlType.Allow));
+                subkey.SetAccessControl(rs);
+                subkey.SetValue("HwProfileGuid", "{" + guid + "}", RegistryValueKind.String);
+                subkey.Close();
+            }
+
+            Console.WriteLine("GUID changed to " + guid);
         }
     }
 }
