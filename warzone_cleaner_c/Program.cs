@@ -1,8 +1,9 @@
-﻿using Microsoft.Win32;
+using Microsoft.Win32;
 using System;
 using System.IO;
-using System.Threading;
+using System.Threading.Tasks;
 using System.Security.AccessControl;
+using System.Diagnostics;
 
 
 namespace warzone_cleaner_c
@@ -11,33 +12,23 @@ namespace warzone_cleaner_c
     {
         private static void Main(string[] args)
         {
+            Task application = new Task(closeApplication);
+            Task files = new Task(cleanFiles);
+            Task registry = new Task(cleanRegistry);
+            Task guid = new Task(spoofGuid);
+
             Console.WriteLine("Warzone shadow ban helper");
-            Thread.Sleep(1000);
-            Console.WriteLine("Begining filetype cleanup...");
-            Thread.Sleep(1000);
-            cleanFiles();
-            Console.WriteLine("Files have been cleaned... Working on registry values.");
-            Thread.Sleep(1000);
-            cleanRegistry();
-            Thread.Sleep(1000);
-            Console.Clear();
-            Console.WriteLine("Please locate your game files and delete the following directories:");
-            Console.WriteLine("Call of Duty Modern Warfare\\Data\\data");
-            Console.WriteLine("Call of Duty Modern Warfare\\main\\recipes");
-            Console.WriteLine("Hit any key once you have completed this step...");
-            Console.ReadKey();
-            Console.Clear();
-            Console.WriteLine("Attempting to change your GUID...");
-            spoofGuid();
-            Thread.Sleep(5000);
-            Console.WriteLine("Device GUID changed.");
-            Console.Clear();
-            Console.WriteLine("Please restart your system.");
-            Thread.Sleep(1000);
+            application.Start();
+            application.Wait();
+            files.Start();
+            files.Wait();
+            registry.Start();
+            registry.Wait();
+            guid.Start();
+            guid.Wait();
+            Console.WriteLine("\nPlease restart your system.");
             Console.WriteLine("After restarting, reinstall/repair battle.net, blizzard, warzone.");
-            Thread.Sleep(1000);
             Console.WriteLine("Make sure to login to a fresh account- otherwise you will need to do this again.");
-            Thread.Sleep(1000);
             Console.WriteLine("Everytime you start a new account after one has been banned,");
             Console.WriteLine("run this application again. Press any key to close.");
             Console.ReadKey();
@@ -45,30 +36,44 @@ namespace warzone_cleaner_c
 
         private static void cleanFiles()
         {
-            string battleDirectoryOne = Environment.GetFolderPath(Environment.SpecialFolder.UserProfile) + $"\\AppData\\Local\\Battle.net"; //%localappdata%
-            string battleDirectoryTwo = Environment.GetFolderPath(Environment.SpecialFolder.UserProfile) + $"\\AppData\\Local\\Blizzard Entertainment"; //%localappdata%
-            string battleDirectoryThree = Environment.GetFolderPath(Environment.SpecialFolder.UserProfile) + $"\\AppData\\Roaming\\Battle.net"; //%appdata%
-            string battleDirectoryFour = $"C:\\ProgramData\\Battle.net";
-            string battleDirectoryFive = $"C:\\ProgramData\\Blizzard Entertainment";
-            string battleDirectorySix = Environment.GetFolderPath(Environment.SpecialFolder.UserProfile) + $"\\Documents\\Call of Duty Modern Warfare"; //userprofile documents
+            string gameDirectory = findGameDirectory();
 
-            DirectoryInfo directory1 = new DirectoryInfo(battleDirectoryOne); //use DirectoryInfo to delete both directories/files in one
-            if (directory1.Exists) directory1.Delete(true);
+            if(gameDirectory == null)
+            {
+                Console.WriteLine("No game directory found.");
+                Console.ReadKey();
+                Environment.Exit(1);
+            }
+            string[] directoryPaths = { 
+                Environment.GetFolderPath(Environment.SpecialFolder.UserProfile) + $"\\AppData\\Local\\Battle.net", 
+                Environment.GetFolderPath(Environment.SpecialFolder.UserProfile) + $"\\AppData\\Local\\Blizzard Entertainment",
+                Environment.GetFolderPath(Environment.SpecialFolder.UserProfile) + $"\\AppData\\Roaming\\Battle.net",
+                Environment.GetFolderPath(Environment.SpecialFolder.UserProfile) + $"\\Documents\\Call of Duty Modern Warfare",
+                $"C:\\ProgramData\\Battle.net",
+                $"C:\\ProgramData\\Blizzard Entertainment"
+            };
 
-            DirectoryInfo directory2 = new DirectoryInfo(battleDirectoryTwo);
-            if (directory2.Exists) directory2.Delete(true);
+            foreach(string directoryPath in directoryPaths)
+            {
+                DirectoryInfo directory = new DirectoryInfo(directoryPath);
+                if (directory.Exists) directory.Delete(true);
+            }
 
-            DirectoryInfo directory3 = new DirectoryInfo(battleDirectoryThree);
-            if (directory3.Exists) directory3.Delete(true);
+            string[] filePaths = {
+                gameDirectory + $"\\main\\data0.dcache",
+                gameDirectory + $"\\main\\data1.dcache",
+                gameDirectory + $"\\main\\toc0.dcache",
+                gameDirectory + $"\\main\\toc1.dcache",
+                gameDirectory + $"\\Data\\data\\shmem",
+                gameDirectory + $"\\main\\recipes\\cmr_hist"
+            };
 
-            DirectoryInfo directory4 = new DirectoryInfo(battleDirectoryFour);
-            if (directory4.Exists) directory4.Delete(true);
+            foreach (string filePath in filePaths)
+            {
+                if (File.Exists(filePath)) File.Delete(filePath);
+            }
 
-            DirectoryInfo directory5 = new DirectoryInfo(battleDirectoryFive);
-            if (directory5.Exists) directory5.Delete(true);
-
-            DirectoryInfo directory6 = new DirectoryInfo(battleDirectorySix);
-            if (directory6.Exists) directory6.Delete(true);
+            Console.WriteLine("Cleaned files.");
         }
 
         private static void cleanRegistry()
@@ -78,6 +83,8 @@ namespace warzone_cleaner_c
 
             string Blizzard = @"Software\Blizzard Entertainment";
             using (RegistryKey key = Registry.CurrentUser.OpenSubKey(Blizzard, true)) if (key != null) foreach (string subkey in key.GetSubKeyNames()) if (subkey == "Battle.net") key.DeleteSubKeyTree(subkey);
+
+            Console.WriteLine("Cleaned registry.");
         }
 
         private static void spoofGuid()
@@ -86,7 +93,7 @@ namespace warzone_cleaner_c
 
             string GUID = @"SYSTEM\CurrentControlSet\Control\IDConfigDB\Hardware Profiles\0001";
             RegistryKey subkey = Registry.LocalMachine.OpenSubKey(GUID, true);
-            if(subkey != null)
+            if (subkey != null)
             {
                 string user = Environment.UserDomainName + "\\" + Environment.UserName;
                 RegistrySecurity rs = new RegistrySecurity();
@@ -100,9 +107,41 @@ namespace warzone_cleaner_c
                 subkey.Close();
             }
 
-            Console.WriteLine("GUID changed to " + guid);
+            Console.WriteLine("GUID spoofed to " + guid);
+        }
+
+        private static string findGameDirectory()
+        {
+            RegistryKey baseKey = RegistryKey.OpenBaseKey(RegistryHive.Users, RegistryView.Default);
+            foreach (string subKey in baseKey.GetSubKeyNames())
+            {
+                if(subKey.Contains("S-1-5-21-") && !subKey.Contains("Classes"))
+                {
+                    RegistryKey games = baseKey.OpenSubKey(subKey + @"\System\GameConfigStore\Children");
+                    foreach(string game in games.GetSubKeyNames())
+                    {
+                        RegistryKey temp = games.OpenSubKey(game);
+                        if(Equals(temp.GetValue("TitleId"), "1787008472"))
+                        {
+                            string ExePath = temp.GetValue("MatchedExeFullPath").ToString();
+                            return ExePath.Substring(0, ExePath.LastIndexOf("\\"));
+                        }
+                    }
+                }
+            }
+            return null;
+        }
+
+        private static void closeApplication()
+        {
+            string[] processNames = { "Agent", "Battle.net" };
+
+            foreach(string processName in processNames)
+            {
+                Process[] processes = Process.GetProcessesByName(processName);
+                foreach(Process process in processes) process.Kill();
+            }
+            Console.WriteLine("Closed Battle.net applications.");
         }
     }
 }
-
-//HKEY_CURRENT_USER\Software\Blizzard Entertainment\Battle.net\
